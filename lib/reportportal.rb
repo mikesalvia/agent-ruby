@@ -24,6 +24,7 @@ require 'tempfile'
 
 require_relative 'report_portal/settings'
 require_relative 'report_portal/patches/rest_client'
+require_relative 'report_portal/patches/request'
 
 module ReportPortal
   TestItem = Struct.new(:name, :type, :id, :start_time, :description, :closed, :tags)

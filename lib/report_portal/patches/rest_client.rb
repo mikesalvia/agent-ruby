@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with Report Portal.  If not, see <http://www.gnu.org/licenses/>.
 
-# monkey-patch to temporarily solve the issue in https://github.com/rest-client/rest-client/pull/222
+# Monkey-patch to temporarily solve the issue in https://github.com/rest-client/rest-client/pull/222
 module RestClient
   module Payload
     extend self
