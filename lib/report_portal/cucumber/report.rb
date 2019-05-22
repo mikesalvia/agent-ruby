@@ -47,6 +47,7 @@ module ReportPortal
 
       def start_launch(desired_time = ReportPortal.now, cmd_args = ARGV)
         if attach_to_launch?
+
           ReportPortal.launch_id =
               if ReportPortal::Settings.instance.launch_id
                 ReportPortal::Settings.instance.launch_id
@@ -54,8 +55,9 @@ module ReportPortal
                 file_path = ReportPortal::Settings.instance.file_with_launch_id || (Pathname(Dir.tmpdir) + 'rp_launch_id.tmp')
                 File.read(file_path)
               end
-          $stdout.puts "Attaching to launch #{ReportPortal.launch_id}"
+          $logger.info("[ReportPortal] Attaching to launch #{ReportPortal.launch_id}...")
         else
+          $logger.info("[ReportPortal] Starting new launch...")
           description = ReportPortal::Settings.instance.description
           description ||= cmd_args.map {|arg| arg.gsub(/rp_uuid=.+/, "rp_uuid=[FILTERED]")}.join(' ')
           ReportPortal.start_launch(description, time_to_send(desired_time))
@@ -63,85 +65,95 @@ module ReportPortal
       end
 
       def test_case_started(event, desired_time = ReportPortal.now) # TODO: time should be a required argument
-        test_case = event.test_case
-        feature = test_case.feature
-        unless same_feature_as_previous_test_case?(feature)
-          end_feature(desired_time) if @feature_node
-          start_feature_with_parentage(feature, desired_time)
+        if ReportPortal.launch_created
+          test_case = event.test_case
+          feature = test_case.feature
+          unless same_feature_as_previous_test_case?(feature)
+            end_feature(desired_time) if @feature_node
+            start_feature_with_parentage(feature, desired_time)
+          end
+
+          name = "#{test_case.keyword}: #{test_case.name}"
+          description = test_case.location.to_s
+          tags = test_case.tags.map(&:name)
+          type = :STEP
+
+          ReportPortal.current_scenario = ReportPortal::TestItem.new(name, type, nil, time_to_send(desired_time), description, false, tags)
+          scenario_node = Tree::TreeNode.new(SecureRandom.hex, ReportPortal.current_scenario)
+          @feature_node << scenario_node
+          ReportPortal.current_scenario.id = ReportPortal.start_item(scenario_node)
         end
-
-        name = "#{test_case.keyword}: #{test_case.name}"
-        description = test_case.location.to_s
-        tags = test_case.tags.map(&:name)
-        type = :STEP
-
-        ReportPortal.current_scenario = ReportPortal::TestItem.new(name, type, nil, time_to_send(desired_time), description, false, tags)
-        scenario_node = Tree::TreeNode.new(SecureRandom.hex, ReportPortal.current_scenario)
-        @feature_node << scenario_node
-        ReportPortal.current_scenario.id = ReportPortal.start_item(scenario_node)
       end
 
       def test_case_finished(event, desired_time = ReportPortal.now)
-        result = event.result
-        status = result.to_sym
-        issue = nil
-        if [:undefined, :pending].include?(status)
-          status = :failed
-          issue = result.message
+        if ReportPortal.launch_created
+          result = event.result
+          status = result.to_sym
+          issue = nil
+          if [:undefined, :pending].include?(status)
+            status = :failed
+            issue = result.message
+          end
+          ReportPortal.finish_item(ReportPortal.current_scenario, status, time_to_send(desired_time), issue)
+          ReportPortal.current_scenario = nil
         end
-        ReportPortal.finish_item(ReportPortal.current_scenario, status, time_to_send(desired_time), issue)
-        ReportPortal.current_scenario = nil
       end
 
       def test_step_started(event, desired_time = ReportPortal.now)
-        test_step = event.test_step
-        if step?(test_step) # `after_test_step` is also invoked for hooks
-          step_source = test_step.source.last
-          message = "-- #{step_source.keyword}#{step_source.text} --"
-          if step_source.multiline_arg.doc_string?
-            message << %(\n"""\n#{step_source.multiline_arg.content}\n""")
-          elsif step_source.multiline_arg.data_table?
-            message << step_source.multiline_arg.raw.reduce("\n") {|acc, row| acc << "| #{row.join(' | ')} |\n"}
+        if ReportPortal.launch_created
+          test_step = event.test_step
+          if step?(test_step) # `after_test_step` is also invoked for hooks
+            step_source = test_step.source.last
+            message = "-- #{step_source.keyword}#{step_source.text} --"
+            if step_source.multiline_arg.doc_string?
+              message << %(\n"""\n#{step_source.multiline_arg.content}\n""")
+            elsif step_source.multiline_arg.data_table?
+              message << step_source.multiline_arg.raw.reduce("\n") {|acc, row| acc << "| #{row.join(' | ')} |\n"}
+            end
+            ReportPortal.send_log(:trace, message, time_to_send(desired_time))
           end
-          ReportPortal.send_log(:trace, message, time_to_send(desired_time))
         end
       end
 
       def test_step_finished(event, desired_time = ReportPortal.now)
-        test_step = event.test_step
-        result = event.result
-        status = result.to_sym
+        if ReportPortal.launch_created
+          test_step = event.test_step
+          result = event.result
+          status = result.to_sym
 
-        if [:failed, :pending, :undefined].include?(status)
-          exception_info = if [:failed, :pending].include?(status)
-                             ex = result.exception
-                             sprintf("%s: %s\n  %s", ex.class.name, ex.message, ex.backtrace.join("\n  "))
-                           else
-                             sprintf("Undefined step: %s:\n%s", test_step.text, test_step.source.last.backtrace_line)
-                           end
-          ReportPortal.send_log(:error, exception_info, time_to_send(desired_time))
-        end
+          if [:failed, :pending, :undefined].include?(status)
+            exception_info = if [:failed, :pending].include?(status)
+                               ex = result.exception
+                               sprintf("%s: %s\n  %s", ex.class.name, ex.message, ex.backtrace.join("\n  "))
+                             else
+                               sprintf("Undefined step: %s:\n%s", test_step.text, test_step.source.last.backtrace_line)
+                             end
+            ReportPortal.send_log(:error, exception_info, time_to_send(desired_time))
+          end
 
-        if status != :passed
-          log_level = (status == :skipped) ? :warn : :error
-          step_type = if step?(test_step)
-                        'Step'
-                      else
-                        hook_class_name = test_step.source.last.class.name.split('::').last
-                        location = test_step.location
-                        "#{hook_class_name} at `#{location}`"
-                      end
-          ReportPortal.send_log(log_level, "#{step_type} #{status}", time_to_send(desired_time))
+          if status != :passed
+            log_level = (status == :skipped) ? :warn : :error
+            step_type = if step?(test_step)
+                          'Step'
+                        else
+                          hook_class_name = test_step.source.last.class.name.split('::').last
+                          location = test_step.location
+                          "#{hook_class_name} at `#{location}`"
+                        end
+            ReportPortal.send_log(log_level, "#{step_type} #{status}", time_to_send(desired_time))
+          end
         end
       end
 
       def done(desired_time = ReportPortal.now)
-        end_feature(desired_time) if @feature_node
+        if ReportPortal.launch_created
+          end_feature(desired_time) if @feature_node
 
-        unless attach_to_launch?
-          close_all_children_of(@root_node) # Folder items are closed here as they can't be closed after finishing a feature
-          time_to_send = time_to_send(desired_time)
-          ReportPortal.finish_launch(time_to_send)
+          unless attach_to_launch?
+            close_all_children_of(@root_node) # Folder items are closed here as they can't be closed after finishing a feature
+            time_to_send = time_to_send(desired_time)
+            ReportPortal.finish_launch(time_to_send)
+          end
         end
       end
 

@@ -33,9 +33,9 @@ module ReportPortal
     if (200..207).include? response.code
       response
     else
-      p "ReportPortal API returned #{response}"
-      p "Offending request method/URL: #{request.args[:method].upcase} #{request.args[:url]}"
-      p "Offending request payload: #{request.args[:payload]}}"
+      $logger.warn("ReportPortal API returned #{response}")
+      $logger.warn("Offending request method/URL: #{request.args[:method].upcase} #{request.args[:url]}")
+      $logger.warn("Offending request payload: #{request.args[:payload]}}")
       response.return!(request, result, &block)
     end
   end
@@ -60,12 +60,30 @@ module ReportPortal
       end
     end
 
+    def launch_created
+      @launch_id != "-1"
+    end
+
     def start_launch(description, start_time = now)
       url = "#{Settings.instance.project_url}/launch"
       data = { name: Settings.instance.launch, start_time: start_time, tags: Settings.instance.tags, description: description, mode: Settings.instance.launch_mode }
-      @launch_id = do_request(url) do |resource|
-        JSON.parse(resource.post(data.to_json, content_type: :json, &@response_handler))['id']
+      begin
+        @launch_id = do_request(url) do |resource|
+          JSON.parse(resource.post(data.to_json, content_type: :json, &@response_handler))['id']
+        end
+      rescue Exception => _e
+        $logger.warn("[ReportPortal] Could not create a launch, no results will be sent to Report Portal.")
+        @launch_id = "-1" # set launch_id to -1 since we could not access Report Portal, this should prevent all future calls to Report Portal
       end
+
+      # create a file to notify other threads that the launch has been attempted, so they can proceed as needed
+      Dir.mkdir './.reportportal' unless File.exists?('./.reportportal')
+      File.open("./.reportportal/launch_attempted", 'w+') do |f|
+        f.flock(File::LOCK_EX)
+        f.flock(File::LOCK_UN)
+      end
+
+      @launch_id
     end
 
     def finish_launch(end_time = now)
@@ -113,8 +131,6 @@ module ReportPortal
         item.closed = true
       end
     end
-
-    # TODO: implement force finish
 
     def send_log(status, message, time)
       unless @current_scenario.nil? || @current_scenario.closed # it can be nil if scenario outline in expand mode is executed
@@ -194,13 +210,6 @@ module ReportPortal
 
     private
 
-    def resource
-      props = { :headers => {:Authorization => "Bearer #{Settings.instance.uuid}"}}
-      verify_ssl = Settings.instance.disable_ssl_verification
-      props[:verify_ssl] = !verify_ssl unless verify_ssl.nil?
-      RestClient::Resource.new(Settings.instance.project_url, props)
-    end
-
     def create_resource(url)
       props = { :headers => {:Authorization => "Bearer #{Settings.instance.uuid}"}}
       verify_ssl = Settings.instance.disable_ssl_verification
@@ -210,17 +219,19 @@ module ReportPortal
 
     def do_request(url)
       resource = create_resource(url)
-      tries = 3
+      max_attempts = 3
+      tries = max_attempts
       begin
+        $logger.debug("[ReportPortal] Attempting request to #{url} (attempt #{max_attempts-tries+1} of #{max_attempts})")
         yield resource
       rescue
-        # $logger.warn("[ReportPortal] Request to #{url} produced an exception: #{$!.class}: #{$!}")
+        $logger.warn("[ReportPortal] Request to #{url} produced an exception: #{$!.class}: #{$!}")
         unless (tries -= 1).zero?
-          # $logger.warn("[ReportPortal] Waiting 3 seconds before retrying... #{tries} remaining...")
+          $logger.warn("[ReportPortal] Waiting 3 seconds before retrying... #{tries} attempts remaining...")
           sleep(3)
           retry
         end
-        # $logger.warn("[ReportPortal] Failed to execute request to #{url} after 3 attempts.")
+        $logger.warn("[ReportPortal] Failed to execute request to #{url} after 3 attempts. Data for this execution will be incomplete!")
         $!.backtrace.each(&method(:p))
         nil
       end

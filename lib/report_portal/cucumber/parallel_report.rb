@@ -34,7 +34,9 @@ module ReportPortal
         @root_node = Tree::TreeNode.new('')
         ReportPortal.last_used_time = 0
         set_parallel_tests_vars
+
         if ParallelTests.first_process?
+          File.delete("./.reportportal/launch_attempted") if File.exists?("./.reportportal/launch_attempted")
           File.open(file_with_launch_id, 'w') do |f|
             f.flock(File::LOCK_EX)
             start_launch(desired_time, @cmd_args_of_parallel_tests)
@@ -48,10 +50,19 @@ module ReportPortal
             f.flush
             f.flock(File::LOCK_UN)
           end
+          $logger.info("[ReportPortal] Launch is ready to start!")
+          $logger.info("[ReportPortal] #{ReportPortal.launch_id}")
         else
+          loop do
+            break if File.exists?("./.reportportal/launch_attempted")
+            $logger.info("[ReportPortal] Waiting for launch of Report Portal to be attempted... Waiting 2 seconds...")
+            sleep 2
+          end
+          $logger.info("[ReportPortal] Starting work on secondary thread.")
           start_time = monotonic_time
           loop do
             break if File.exist?(file_with_launch_id)
+            $logger.info("[ReportPortal] Waiting for launch ID to written to file to be accessed by secondary thread.")
             if monotonic_time - start_time > wait_time_for_launch_start
               raise "File with launch ID wasn't created after waiting #{wait_time_for_launch_start} seconds"
             end
