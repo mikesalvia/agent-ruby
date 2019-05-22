@@ -36,7 +36,6 @@ module ReportPortal
         set_parallel_tests_vars
 
         if ParallelTests.first_process?
-          File.delete("./.reportportal/launch_attempted") if File.exists?("./.reportportal/launch_attempted")
           File.open(file_with_launch_id, 'w') do |f|
             f.flock(File::LOCK_EX)
             start_launch(desired_time, @cmd_args_of_parallel_tests)
@@ -53,12 +52,7 @@ module ReportPortal
           $logger.info("[ReportPortal] Launch is ready to start!")
           $logger.info("[ReportPortal] #{ReportPortal.launch_id}")
         else
-          loop do
-            break if File.exists?("./.reportportal/launch_attempted")
-            $logger.info("[ReportPortal] Waiting for launch of Report Portal to be attempted... Waiting 2 seconds...")
-            sleep 2
-          end
-          $logger.info("[ReportPortal] Starting work on secondary thread.")
+          $logger.info("[ReportPortal] Starting work on Thread-#{ENV['TEST_ENV_NUMBER']}.")
           start_time = monotonic_time
           loop do
             break if File.exist?(file_with_launch_id)

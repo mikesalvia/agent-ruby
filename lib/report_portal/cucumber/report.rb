@@ -47,7 +47,6 @@ module ReportPortal
 
       def start_launch(desired_time = ReportPortal.now, cmd_args = ARGV)
         if attach_to_launch?
-
           ReportPortal.launch_id =
               if ReportPortal::Settings.instance.launch_id
                 ReportPortal::Settings.instance.launch_id

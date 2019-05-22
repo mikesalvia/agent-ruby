@@ -53,7 +53,7 @@ module RestClient
         # also supplied by the user.
         payload_headers.each_pair do |key, val|
           if headers.include?(key) && headers[key] != val
-            $logger.warn("[RestClient::Request] Overriding #{key.inspect} header #{headers.fetch(key).inspect} with #{val.inspect} due to payload")
+            $logger.warn("[ReportPortal][RestClient::Request] Overriding #{key.inspect} header #{headers.fetch(key).inspect} with #{val.inspect} due to payload")
           end
         end
 
@@ -64,7 +64,7 @@ module RestClient
       cookies = make_cookie_header
       if cookies && !cookies.empty?
         if headers['Cookie']
-          $logger.warn('[RestClient::Request] Overriding "Cookie" header with :cookies option')
+          $logger.warn('[ReportPortal][RestClient::Request] Overriding "Cookie" header with :cookies option')
         end
         headers['Cookie'] = cookies
       end

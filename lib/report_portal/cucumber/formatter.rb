@@ -25,8 +25,6 @@ module ReportPortal
     class Formatter
       # @api private
       def initialize(config)
-        ENV['REPORT_PORTAL_USED'] = 'true'
-
         @thread = Thread.new do
           initialize_report
           loop do
