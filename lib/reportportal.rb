@@ -29,6 +29,17 @@ module ReportPortal
   TestItem = Struct.new(:name, :type, :id, :start_time, :description, :closed, :tags)
   LOG_LEVELS = { error: 'ERROR', warn: 'WARN', info: 'INFO', debug: 'DEBUG', trace: 'TRACE', fatal: 'FATAL', unknown: 'UNKNOWN' }
 
+  @response_handler = proc do |response, request, result, &block|
+    if (200..207).include? response.code
+      response
+    else
+      p "ReportPortal API returned #{response}"
+      p "Offending request method/URL: #{request.args[:method].upcase} #{request.args[:url]}"
+      p "Offending request payload: #{request.args[:payload]}}"
+      response.return!(request, result, &block)
+    end
+  end
+
   class << self
     attr_accessor :launch_id, :current_scenario, :last_used_time
 
@@ -50,25 +61,32 @@ module ReportPortal
     end
 
     def start_launch(description, start_time = now)
+      url = "#{Settings.instance.project_url}/launch"
       data = { name: Settings.instance.launch, start_time: start_time, tags: Settings.instance.tags, description: description, mode: Settings.instance.launch_mode }
-      response = project_resource['launch'].post(data.to_json)
-      @launch_id = JSON.parse(response)['id']
+      @launch_id = do_request(url) do |resource|
+        JSON.parse(resource.post(data.to_json, content_type: :json, &@response_handler))['id']
+      end
     end
 
     def finish_launch(end_time = now)
+      url = "#{Settings.instance.project_url}/launch/#{@launch_id}/finish"
       data = { end_time: end_time }
-      project_resource["launch/#{@launch_id}/finish"].put(data.to_json)
+      do_request(url) do |resource|
+        resource.put data.to_json, content_type: :json, &@response_handler
+      end
     end
 
     def start_item(item_node)
+      url = "#{Settings.instance.project_url}/item"
+      url += "/#{item_node.parent.content.id}" unless item_node.parent && item_node.parent.is_root?
       item = item_node.content
       data = { start_time: item.start_time, name: item.name[0, 255], type: item.type.to_s, launch_id: @launch_id, description: item.description }
       data[:tags] = item.tags unless item.tags.empty?
       begin
-        url = 'item'
-        url += "/#{item_node.parent.content.id}" unless item_node.parent && item_node.parent.is_root?
-        response = project_resource[url].post(data.to_json)
-      rescue RestClient::Exception => e
+        do_request(url) do |resource|
+          JSON.parse(resource.post(data.to_json, content_type: :json, &@response_handler))['id']
+        end
+      rescue => e
         response_message = JSON.parse(e.response)['message']
         m = response_message.match(/Start time of child \['(.+)'\] item should be same or later than start time \['(.+)'\] of the parent item\/launch '.+'/)
         raise unless m
@@ -77,11 +95,11 @@ module ReportPortal
         ReportPortal.last_used_time = data[:start_time]
         retry
       end
-      JSON.parse(response)['id']
     end
 
     def finish_item(item, status = nil, end_time = nil, force_issue = nil)
       unless item.nil? || item.id.nil? || item.closed
+        url = "#{Settings.instance.project_url}/item/#{item.id}"
         data = { end_time: end_time.nil? ? now : end_time }
         data[:status] = status unless status.nil?
         if force_issue && status != :passed # TODO: check for :passed status is probably not needed
@@ -89,7 +107,9 @@ module ReportPortal
         elsif status == :skipped
           data[:issue] = { issue_type: 'NOT_ISSUE' }
         end
-        project_resource["item/#{item.id}"].put(data.to_json)
+        do_request(url) do |resource|
+          resource.put data.to_json, content_type: :json, &@response_handler
+        end
         item.closed = true
       end
     end
@@ -98,12 +118,16 @@ module ReportPortal
 
     def send_log(status, message, time)
       unless @current_scenario.nil? || @current_scenario.closed # it can be nil if scenario outline in expand mode is executed
+        url = "#{Settings.instance.project_url}/log"
         data = { item_id: @current_scenario.id, time: time, level: status_to_level(status), message: message.to_s }
-        project_resource['log'].post(data.to_json)
+        do_request(url) do |resource|
+          resource.post(data.to_json, content_type: :json, &@response_handler)
+        end
       end
     end
 
-    def send_file(status, path, label = nil, time = now, mime_type = 'image/png')
+    def send_file(status, path, label = nil, time = now, mime_type='image/png')
+      url = "#{Settings.instance.project_url}/log"
       unless File.file?(path)
         extension = ".#{MIME::Types[mime_type].first.extensions.first}"
         temp = Tempfile.open(['file',extension])
@@ -116,35 +140,39 @@ module ReportPortal
         label ||= File.basename(file)
         json = { level: status_to_level(status), message: label, item_id: @current_scenario.id, time: time, file: { name: File.basename(file) } }
         data = { :json_request_part => [json].to_json, label => file, :multipart => true, :content_type => 'application/json' }
-        project_resource['log'].post(data, content_type: 'multipart/form-data')
+        do_request(url) do |resource|
+          resource.post(data, { content_type: 'multipart/form-data' }, &@response_handler)
+        end
       end
     end
 
     # needed for parallel formatter
     def item_id_of(name, parent_node)
       if parent_node.is_root? # folder without parent folder
-        url = "item?filter.eq.launch=#{@launch_id}&filter.eq.name=#{URI.escape(name)}&filter.size.path=0"
+        url = "#{Settings.instance.project_url}/item?filter.eq.launch=#{@launch_id}&filter.eq.name=#{URI.escape(name)}&filter.size.path=0"
       else
-        url = "item?filter.eq.launch=#{@launch_id}&filter.eq.parent=#{parent_node.content.id}&filter.eq.name=#{URI.escape(name)}"
+        url = "#{Settings.instance.project_url}/item?filter.eq.launch=#{@launch_id}&filter.eq.parent=#{parent_node.content.id}&filter.eq.name=#{URI.escape(name)}"
       end
-      data = JSON.parse(project_resource[url].get)
-      if data.key? 'content'
-        data['content'].empty? ? nil : data['content'][0]['id']
-      else
-        nil # item isn't started yet
+      do_request(url) do |resource|
+        data = JSON.parse(resource.get)
+        if data.key? 'content'
+          data['content'].empty? ? nil : data['content'][0]['id']
+        else
+          nil # item isn't started yet
+        end
       end
     end
 
     # needed for parallel formatter
     def close_child_items(parent_id)
       if parent_id.nil?
-        url = "item?filter.eq.launch=#{@launch_id}&filter.size.path=0&page.page=1&page.size=100"
+        url = "#{Settings.instance.project_url}/item?filter.eq.launch=#{@launch_id}&filter.size.path=0&page.page=1&page.size=100"
       else
-        url = "item?filter.eq.launch=#{@launch_id}&filter.eq.parent=#{parent_id}&page.page=1&page.size=100"
+        url = "#{Settings.instance.project_url}/item?filter.eq.launch=#{@launch_id}&filter.eq.parent=#{parent_id}&page.page=1&page.size=100"
       end
       ids = []
       loop do
-        response = JSON.parse(project_resource[url].get)
+        response = do_request(url) { |r| JSON.parse(r.get) }
         if response.key?('links')
           link = response['links'].find { |i| i['rel'] == 'next' }
           url = link.nil? ? nil : link['href']
@@ -166,21 +194,35 @@ module ReportPortal
 
     private
 
-    def project_resource
-      options = {}
-      options[:headers] = {
-        :Authorization => "Bearer #{Settings.instance.uuid}",
-        content_type: :json
-      }
+    def resource
+      props = { :headers => {:Authorization => "Bearer #{Settings.instance.uuid}"}}
       verify_ssl = Settings.instance.disable_ssl_verification
-      options[:verify_ssl] = !verify_ssl unless verify_ssl.nil?
-      RestClient::Resource.new(Settings.instance.project_url, options) do |response, request, _, &block|
-        unless (200..207).include?(response.code)
-          p "ReportPortal API returned #{response}"
-          p "Offending request method/URL: #{request.args[:method].upcase} #{request.args[:url]}"
-          p "Offending request payload: #{request.args[:payload]}}"
+      props[:verify_ssl] = !verify_ssl unless verify_ssl.nil?
+      RestClient::Resource.new(Settings.instance.project_url, props)
+    end
+
+    def create_resource(url)
+      props = { :headers => {:Authorization => "Bearer #{Settings.instance.uuid}"}}
+      verify_ssl = Settings.instance.disable_ssl_verification
+      props[:verify_ssl] = !verify_ssl unless verify_ssl.nil?
+      RestClient::Resource.new url, props
+    end
+
+    def do_request(url)
+      resource = create_resource(url)
+      tries = 3
+      begin
+        yield resource
+      rescue
+        # $logger.warn("[ReportPortal] Request to #{url} produced an exception: #{$!.class}: #{$!}")
+        unless (tries -= 1).zero?
+          # $logger.warn("[ReportPortal] Waiting 3 seconds before retrying... #{tries} remaining...")
+          sleep(3)
+          retry
         end
-        response.return!(&block)
+        # $logger.warn("[ReportPortal] Failed to execute request to #{url} after 3 attempts.")
+        $!.backtrace.each(&method(:p))
+        nil
       end
     end
   end
