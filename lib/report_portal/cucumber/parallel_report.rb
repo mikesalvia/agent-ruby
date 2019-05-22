@@ -62,8 +62,9 @@ module ReportPortal
             ReportPortal.launch_id = f.read
             f.flock(File::LOCK_UN)
           end
-          sleep_time = ENV['TEST_ENV_NUMBER'].to_i
+          sleep_time = (ENV['TEST_ENV_NUMBER'].to_i * 5)
           sleep(sleep_time) # stagger start times for reporting to Report Portal to avoid collision
+          $logger.warn("[ReportPortal] Waiting #{sleep_time} seconds on Thread-#{ENV['TEST_ENV_NUMBER']}...")
         end
       end
 
