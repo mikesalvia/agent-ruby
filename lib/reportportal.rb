@@ -65,7 +65,11 @@ module ReportPortal
       rescue Exception => _e
         $logger.warn("[ReportPortal] Request to [launch] produced an exception: #{$!.class}: #{$!}")
         # $!.backtrace.each(&method(:p))
-        retry unless (tries -= 1).zero?
+        unless (tries -= 1).zero?
+          $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [launch], #{tries} attempts remaining.")
+          sleep(10)
+          retry
+        end
         $logger.warn("[ReportPortal] Failed to execute request to [launch] after 3 attempts.")
         $logger.warn("[ReportPortal] Could not create a launch, no results will be sent to Report Portal.")
         @launch_id = "-1" # set launch_id to -1 since we could not access Report Portal, this should prevent all future calls to Report Portal
@@ -85,7 +89,7 @@ module ReportPortal
         $logger.warn("[ReportPortal] Request to [launch/#{@launch_id}/finish] produced an exception: #{$!.class}: #{$!}")
         # $!.backtrace.each(&method(:p))
         unless (tries -= 1).zero?
-          $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [#{"item/#{item.id}"}], #{tries} attempts remaining.")
+          $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [launch/#{@launch_id}/finish], #{tries} attempts remaining.")
           sleep(10)
           retry
         end
@@ -178,7 +182,7 @@ module ReportPortal
           $logger.warn("[ReportPortal] Request to [log] produced an exception: #{$!.class}: #{$!}")
           # $!.backtrace.each(&method(:p))
           unless (tries -= 1).zero?
-            $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [#{"item/#{item.id}"}], #{tries} attempts remaining.")
+            $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [log], #{tries} attempts remaining.")
             sleep(10)
             retry
           end
@@ -209,7 +213,7 @@ module ReportPortal
           $logger.warn("[ReportPortal] Request to [log] produced an exception: #{$!.class}: #{$!}")
           # $!.backtrace.each(&method(:p))
           unless (tries -= 1).zero?
-            $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [#{"item/#{item.id}"}], #{tries} attempts remaining.")
+            $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [log], #{tries} attempts remaining.")
             sleep(10)
             retry
           end
@@ -239,7 +243,7 @@ module ReportPortal
         $logger.warn("[ReportPortal] Request to #{url} produced an exception: #{$!.class}: #{$!}")
         # $!.backtrace.each(&method(:p))
         unless (tries -= 1).zero?
-          $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [#{"item/#{item.id}"}], #{tries} attempts remaining.")
+          $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [#{url}], #{tries} attempts remaining.")
           sleep(10)
           retry
         end
@@ -276,7 +280,7 @@ module ReportPortal
           $logger.warn("[ReportPortal] Request to #{url} produced an exception: #{$!.class}: #{$!}")
           # $!.backtrace.each(&method(:p))
           unless (tries -= 1).zero?
-            $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [#{"item/#{item.id}"}], #{tries} attempts remaining.")
+            $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [#{url}], #{tries} attempts remaining.")
             sleep(10)
             retry
           end
