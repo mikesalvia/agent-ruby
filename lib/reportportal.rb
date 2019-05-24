@@ -110,7 +110,12 @@ module ReportPortal
         JSON.parse(response)['id']
       rescue RestClient::Exception => e
         $logger.warn("[ReportPortal] Request to #{"item/#{item.id}"} produced an exception: #{$!.class}: #{$!}")
-        response_message = JSON.parse(e.response)['message']
+        response_message = ""
+        begin
+          response_message = JSON.parse(e.response)['message']
+        rescue => pe
+          $logger.warn("Unable to parse response into JSON: #{pe.class} => #{pe.message}")
+        end
         m = response_message.match(/Start time of child \['(.+)'\] item should be same or later than start time \['(.+)'\] of the parent item\/launch '.+'/)
         if m
           $logger.warn("[ReportPortal] Shifting item [start_time] by 1 second is required.")
