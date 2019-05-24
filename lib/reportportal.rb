@@ -56,8 +56,8 @@ module ReportPortal
 
     def start_launch(description, start_time = now)
       data = { name: Settings.instance.launch, start_time: start_time, tags: Settings.instance.tags, description: description, mode: Settings.instance.launch_mode }
-      tries = 3
-      max_tries = 3
+      tries = 5
+      max_tries = 5
       begin
         response = project_resource['launch'].post(data.to_json)
         @launch_id = JSON.parse(response)['id']
@@ -70,7 +70,7 @@ module ReportPortal
           sleep(10)
           retry
         end
-        $logger.warn("[ReportPortal] Failed to execute request to [launch] after 3 attempts.")
+        $logger.warn("[ReportPortal] Failed to execute request to [launch] after #{max_tries} attempts.")
         $logger.warn("[ReportPortal] Could not create a launch, no results will be sent to Report Portal.")
         @launch_id = "-1" # set launch_id to -1 since we could not access Report Portal, this should prevent all future calls to Report Portal
       end
@@ -79,8 +79,8 @@ module ReportPortal
 
     def finish_launch(end_time = now)
       data = { end_time: end_time }
-      tries = 3
-      max_tries = 3
+      tries = 5
+      max_tries = 5
       begin
         result = project_resource["launch/#{@launch_id}/finish"].put(data.to_json)
         $logger.info("[ReportPortal] Request to [launch/#{@launch_id}/finish] successful after #{(max_tries-tries)+1} attempts.") if tries != 3
@@ -93,7 +93,7 @@ module ReportPortal
           sleep(10)
           retry
         end
-        $logger.warn("[ReportPortal] Failed to execute request to [launch/#{@launch_id}/finish] after 3 attempts.")
+        $logger.warn("[ReportPortal] Failed to execute request to [launch/#{@launch_id}/finish] after #{max_tries} attempts.")
       end
     end
 
@@ -102,6 +102,8 @@ module ReportPortal
       data = { start_time: item.start_time, name: item.name[0, 255], type: item.type.to_s, launch_id: @launch_id, description: item.description }
       data[:tags] = item.tags unless item.tags.empty?
       retry_required = false
+      tries = 5
+      max_tries = 5
       begin
         url = 'item'
         url += "/#{item_node.parent.content.id}" unless item_node.parent && item_node.parent.is_root?
@@ -132,7 +134,7 @@ module ReportPortal
             sleep(10)
             retry
           end
-          $logger.warn("[ReportPortal] Failed to execute request to [#{"item/#{item.id}"}] after 3 attempts.")
+          $logger.warn("[ReportPortal] Failed to execute request to [#{"item/#{item.id}"}] after #{max_tries} attempts.")
         end
 
       rescue => _e
@@ -143,7 +145,7 @@ module ReportPortal
           sleep(10)
           retry
         end
-        $logger.warn("[ReportPortal] Failed to execute request to [#{"item/#{item.id}"}] after 3 attempts.")
+        $logger.warn("[ReportPortal] Failed to execute request to [#{"item/#{item.id}"}] after #{max_tries} attempts.")
       end
     end
 
@@ -156,8 +158,8 @@ module ReportPortal
         elsif status == :skipped
           data[:issue] = { issue_type: 'NOT_ISSUE' }
         end
-        tries = 3
-        max_tries = 3
+        tries = 5
+        max_tries = 5
         begin
           project_resource["item/#{item.id}"].put(data.to_json)
           $logger.info("[ReportPortal] Request to #{"item/#{item.id}"} successful after #{(max_tries-tries)+1} attempts.") if tries != 3
@@ -169,7 +171,7 @@ module ReportPortal
             sleep(10)
             retry
           end
-          $logger.warn("[ReportPortal] Failed to execute request to [#{"item/#{item.id}"}] after 3 attempts.")
+          $logger.warn("[ReportPortal] Failed to execute request to [#{"item/#{item.id}"}] after #{max_tries} attempts.")
         end
         item.closed = true
       end
@@ -178,8 +180,8 @@ module ReportPortal
     def send_log(status, message, time)
       unless @current_scenario.nil? || @current_scenario.closed # it can be nil if scenario outline in expand mode is executed
         data = { item_id: @current_scenario.id, time: time, level: status_to_level(status), message: message.to_s }
-        tries = 3
-        max_tries = 3
+        tries = 5
+        max_tries = 5
         begin
           project_resource['log'].post(data.to_json)
           $logger.info("[ReportPortal] Request to [log] successful after #{(max_tries-tries)+1} attempts.") if tries != 3
@@ -191,7 +193,7 @@ module ReportPortal
             sleep(10)
             retry
           end
-          $logger.warn("[ReportPortal] Failed to execute request to [log] after 3 attempts.")
+          $logger.warn("[ReportPortal] Failed to execute request to [log] after #{max_tries} attempts.")
         end
       end
     end
@@ -209,8 +211,8 @@ module ReportPortal
         label ||= File.basename(file)
         json = { level: status_to_level(status), message: label, item_id: @current_scenario.id, time: time, file: { name: File.basename(file) } }
         data = { :json_request_part => [json].to_json, label => file, :multipart => true, :content_type => 'application/json' }
-        tries = 3
-        max_tries = 3
+        tries = 5
+        max_tries = 5
         begin
           project_resource['log'].post(data, content_type: 'multipart/form-data')
           $logger.info("[ReportPortal] Request to [log] successful after #{(max_tries-tries)+1} attempts.") if tries != 3
@@ -222,7 +224,7 @@ module ReportPortal
             sleep(10)
             retry
           end
-          $logger.warn("[ReportPortal] Failed to execute request to [log] after 3 attempts.")
+          $logger.warn("[ReportPortal] Failed to execute request to [log] after #{max_tries} attempts.")
         end
       end
     end
@@ -234,16 +236,26 @@ module ReportPortal
       else
         url = "item?filter.eq.launch=#{@launch_id}&filter.eq.parent=#{parent_node.content.id}&filter.eq.name=#{URI.escape(name)}"
       end
-      tries = 3
-      max_tries = 3
+      tries = 5
+      max_tries = 5
       begin
-        data = JSON.parse(project_resource[url].get)
-        $logger.info("[ReportPortal] Request to #{url} successful after #{(max_tries-tries)+1} attempts.") if tries != 3
-        if data.key? 'content'
-          data['content'].empty? ? nil : data['content'][0]['id']
-        else
-          nil # item isn't started yet
+        item_id = nil
+        while item_id == nil && !tries.zero?
+          $logger.warn("[ReportPortal] Request to [item_id_of] #{url} successful after #{(max_tries-tries)+1} attempts.") if tries != 3
+          response = project_resource[url].get
+          $logger.warn("[ReportPortal] Response from [item_id_of] #{url}: #{response}")
+          data = JSON.parse(response)
+          $logger.warn("[ReportPortal] data.keys: #{data.keys}")
+          if data.key? 'content' && !data['content'].empty?
+            item_id = data['content'][0]['id']
+            $logger.info("Item ID is: [#{item_id}")
+          else
+            tries -= 1
+            $logger.warn("[ReportPortal] Item not yet created, waiting 15 seconds and trying again, #{tries} attempts remaining.")
+            sleep(15)
+          end
         end
+        item_id
       rescue Exception => _e
         $logger.warn("[ReportPortal] Request to #{url} produced an exception: #{$!.class}: #{$!}")
         # $!.backtrace.each(&method(:p))
@@ -252,7 +264,7 @@ module ReportPortal
           sleep(10)
           retry
         end
-        $logger.warn("[ReportPortal] Failed to execute request to #{url} after 3 attempts.")
+        $logger.warn("[ReportPortal] Failed to execute request to #{url} after #{max_tries} attempts.")
         nil
       end
     end
@@ -266,8 +278,8 @@ module ReportPortal
       end
       ids = []
       loop do
-        tries = 3
-        max_tries = 3
+        tries = 5
+        max_tries = 5
         begin
           data = JSON.parse(project_resource[url].get)
           $logger.info("[ReportPortal] Request to #{url} successful after #{(max_tries-tries)+1} attempts.") if tries != 3
@@ -289,7 +301,7 @@ module ReportPortal
             sleep(10)
             retry
           end
-          $logger.warn("[ReportPortal] Failed to execute request to #{url} after 3 attempts.")
+          $logger.warn("[ReportPortal] Failed to execute request to #{url} after #{max_tries} attempts.")
           nil
         end
       end
