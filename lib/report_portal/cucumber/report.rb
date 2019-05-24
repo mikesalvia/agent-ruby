@@ -59,7 +59,7 @@ module ReportPortal
           $logger.info("[ReportPortal] Starting new launch...")
           description = ReportPortal::Settings.instance.description
           description ||= cmd_args.map {|arg| arg.gsub(/rp_uuid=.+/, "rp_uuid=[FILTERED]")}.join(' ')
-          ReportPortal.start_launch(description, time_to_send(desired_time))
+          ReportPortal.launch_id = ReportPortal.start_launch(description, time_to_send(desired_time))
         end
       end
 
@@ -214,6 +214,7 @@ module ReportPortal
                   folder_name_for_tracker += "#{path_components_no_feature[path_index]}/"
                 end
               end
+
               @folder_creation_tracking_file = (Pathname(Dir.tmpdir)) + "folder_creation_tracking_#{ReportPortal.launch_id}.lck"
               File.open(@folder_creation_tracking_file, 'r+') do |f|
                 f.flock(File::LOCK_SH)

@@ -34,7 +34,6 @@ module ReportPortal
         @root_node = Tree::TreeNode.new('')
         ReportPortal.last_used_time = 0
         set_parallel_tests_vars
-
         if ParallelTests.first_process?
           File.open(file_with_launch_id, 'w') do |f|
             f.flock(File::LOCK_EX)
@@ -52,24 +51,23 @@ module ReportPortal
           $logger.info("[ReportPortal] Launch is ready to start!")
           $logger.info("[ReportPortal] #{ReportPortal.launch_id}")
         else
-          $logger.info("[ReportPortal] Starting work on Thread-#{ENV['TEST_ENV_NUMBER']}.")
           start_time = monotonic_time
           loop do
             break if File.exist?(file_with_launch_id)
-            $logger.info("[ReportPortal] Waiting for launch ID to written to file to be accessed by secondary thread.")
+            $logger.info("[ReportPortal] Waiting for launch ID to written to [#{file_with_launch_id}] on Thread-#{ENV['TEST_ENV_NUMBER']}")
             if monotonic_time - start_time > wait_time_for_launch_start
               raise "File with launch ID wasn't created after waiting #{wait_time_for_launch_start} seconds"
             end
-            sleep 0.5
+            sleep(2)
           end
+          $logger.info("[ReportPortal] [#{file_with_launch_id}] was found on Thread-#{ENV['TEST_ENV_NUMBER']}.")
+          sleep(5)
           File.open(file_with_launch_id, 'r') do |f|
             f.flock(File::LOCK_SH)
             ReportPortal.launch_id = f.read
             f.flock(File::LOCK_UN)
           end
-          sleep_time = (ENV['TEST_ENV_NUMBER'].to_i * 5)
-          sleep(sleep_time) # stagger start times for reporting to Report Portal to avoid collision
-          $logger.warn("[ReportPortal] Waiting #{sleep_time} seconds on Thread-#{ENV['TEST_ENV_NUMBER']}...")
+          $logger.info("[ReportPortal] #{ReportPortal.launch_id} will be used on Thread-#{ENV['TEST_ENV_NUMBER']}.")
         end
       end
 

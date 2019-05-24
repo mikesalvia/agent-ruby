@@ -61,13 +61,13 @@ module ReportPortal
       begin
         response = project_resource['launch'].post(data.to_json)
         @launch_id = JSON.parse(response)['id']
-        $logger.info("[ReportPortal] Request to [launch] successful after #{(max_tries-tries)+1} attempts.") if tries != 3
+        $logger.info("[ReportPortal] Request to [launch] successful after #{(max_tries-tries)+1} attempts.") if tries != max_tries
       rescue Exception => _e
         $logger.warn("[ReportPortal] Request to [launch] produced an exception: #{$!.class}: #{$!}")
         # $!.backtrace.each(&method(:p))
         unless (tries -= 1).zero?
-          $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [launch], #{tries} attempts remaining.")
-          sleep(10)
+          $logger.warn("[ReportPortal] Waiting 30 seconds and retrying request to [launch], #{tries} attempts remaining.")
+          sleep(30)
           retry
         end
         $logger.warn("[ReportPortal] Failed to execute request to [launch] after #{max_tries} attempts.")
@@ -83,14 +83,14 @@ module ReportPortal
       max_tries = 5
       begin
         result = project_resource["launch/#{@launch_id}/finish"].put(data.to_json)
-        $logger.info("[ReportPortal] Request to [launch/#{@launch_id}/finish] successful after #{(max_tries-tries)+1} attempts.") if tries != 3
+        $logger.info("[ReportPortal] Request to [launch/#{@launch_id}/finish] successful after #{(max_tries-tries)+1} attempts.") if tries != max_tries
         result
       rescue Exception => _e
         $logger.warn("[ReportPortal] Request to [launch/#{@launch_id}/finish] produced an exception: #{$!.class}: #{$!}")
         # $!.backtrace.each(&method(:p))
         unless (tries -= 1).zero?
-          $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [launch/#{@launch_id}/finish], #{tries} attempts remaining.")
-          sleep(10)
+          $logger.warn("[ReportPortal] Waiting 30 seconds and retrying request to [launch/#{@launch_id}/finish], #{tries} attempts remaining.")
+          sleep(30)
           retry
         end
         $logger.warn("[ReportPortal] Failed to execute request to [launch/#{@launch_id}/finish] after #{max_tries} attempts.")
@@ -130,8 +130,8 @@ module ReportPortal
           $logger.warn("[ReportPortal] Shifting item [start_time] is not required according to exception message.")
           # $!.backtrace.each(&method(:p))
           unless (tries -= 1).zero?
-            $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [#{"item/#{item.id}"}], #{tries} attempts remaining.")
-            sleep(10)
+            $logger.warn("[ReportPortal] Waiting 30 seconds and retrying request to [#{"item/#{item.id}"}], #{tries} attempts remaining.")
+            sleep(30)
             retry
           end
           $logger.warn("[ReportPortal] Failed to execute request to [#{"item/#{item.id}"}] after #{max_tries} attempts.")
@@ -141,8 +141,8 @@ module ReportPortal
         $logger.warn("[ReportPortal] Request to #{"item/#{item.id}"} produced an exception: #{$!.class}: #{$!}")
         # $!.backtrace.each(&method(:p))
         unless (tries -= 1).zero?
-          $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [#{"item/#{item.id}"}], #{tries} attempts remaining.")
-          sleep(10)
+          $logger.warn("[ReportPortal] Waiting 30 seconds and retrying request to [#{"item/#{item.id}"}], #{tries} attempts remaining.")
+          sleep(30)
           retry
         end
         $logger.warn("[ReportPortal] Failed to execute request to [#{"item/#{item.id}"}] after #{max_tries} attempts.")
@@ -162,13 +162,13 @@ module ReportPortal
         max_tries = 5
         begin
           project_resource["item/#{item.id}"].put(data.to_json)
-          $logger.info("[ReportPortal] Request to #{"item/#{item.id}"} successful after #{(max_tries-tries)+1} attempts.") if tries != 3
+          $logger.info("[ReportPortal] Request to #{"item/#{item.id}"} successful after #{(max_tries-tries)+1} attempts.") if tries != max_tries
         rescue Exception => _e
           $logger.warn("[ReportPortal] Request to #{"item/#{item.id}"} produced an exception: #{$!.class}: #{$!}")
           # $!.backtrace.each(&method(:p))
           unless (tries -= 1).zero?
-            $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [#{"item/#{item.id}"}], #{tries} attempts remaining.")
-            sleep(10)
+            $logger.warn("[ReportPortal] Waiting 30 seconds and retrying request to [#{"item/#{item.id}"}], #{tries} attempts remaining.")
+            sleep(30)
             retry
           end
           $logger.warn("[ReportPortal] Failed to execute request to [#{"item/#{item.id}"}] after #{max_tries} attempts.")
@@ -180,17 +180,17 @@ module ReportPortal
     def send_log(status, message, time)
       unless @current_scenario.nil? || @current_scenario.closed # it can be nil if scenario outline in expand mode is executed
         data = { item_id: @current_scenario.id, time: time, level: status_to_level(status), message: message.to_s }
-        tries = 5
-        max_tries = 5
+        tries = 10
+        max_tries = 10
         begin
           project_resource['log'].post(data.to_json)
-          $logger.info("[ReportPortal] Request to [log] successful after #{(max_tries-tries)+1} attempts.") if tries != 3
+          $logger.info("[ReportPortal] Request to [log] successful after #{(max_tries-tries)+1} attempts.") if tries != max_tries
         rescue Exception => _e
           $logger.warn("[ReportPortal] Request to [log] produced an exception: #{$!.class}: #{$!}")
           # $!.backtrace.each(&method(:p))
           unless (tries -= 1).zero?
-            $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [log], #{tries} attempts remaining.")
-            sleep(10)
+            $logger.warn("[ReportPortal] Waiting 30 seconds and retrying request to [log], #{tries} attempts remaining.")
+            sleep(30)
             retry
           end
           $logger.warn("[ReportPortal] Failed to execute request to [log] after #{max_tries} attempts.")
@@ -211,17 +211,17 @@ module ReportPortal
         label ||= File.basename(file)
         json = { level: status_to_level(status), message: label, item_id: @current_scenario.id, time: time, file: { name: File.basename(file) } }
         data = { :json_request_part => [json].to_json, label => file, :multipart => true, :content_type => 'application/json' }
-        tries = 5
-        max_tries = 5
+        tries = 10
+        max_tries = 10
         begin
           project_resource['log'].post(data, content_type: 'multipart/form-data')
-          $logger.info("[ReportPortal] Request to [log] successful after #{(max_tries-tries)+1} attempts.") if tries != 3
+          $logger.info("[ReportPortal] Request to [log] successful after #{(max_tries-tries)+1} attempts.") if tries != max_tries
         rescue Exception => _e
           $logger.warn("[ReportPortal] Request to [log] produced an exception: #{$!.class}: #{$!}")
           # $!.backtrace.each(&method(:p))
           unless (tries -= 1).zero?
-            $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [log], #{tries} attempts remaining.")
-            sleep(10)
+            $logger.warn("[ReportPortal] Waiting 30 seconds and retrying request to [log], #{tries} attempts remaining.")
+            sleep(30)
             retry
           end
           $logger.warn("[ReportPortal] Failed to execute request to [log] after #{max_tries} attempts.")
@@ -241,18 +241,15 @@ module ReportPortal
       begin
         item_id = nil
         while item_id == nil && !tries.zero?
-          $logger.warn("[ReportPortal] Request to [item_id_of] #{url} successful after #{(max_tries-tries)+1} attempts.") if tries != 3
+          $logger.info("[ReportPortal] Request to [item_id_of] #{url} successful after #{(max_tries-tries)+1} attempts.") if tries != max_tries
           response = project_resource[url].get
-          $logger.warn("[ReportPortal] Response from [item_id_of] #{url}: #{response}")
           data = JSON.parse(response)
-          $logger.warn("[ReportPortal] data.keys: #{data.keys}")
-          if data.key? 'content' && !data['content'].empty?
+          if data.key?('content') && data['content'].size > 0
             item_id = data['content'][0]['id']
-            $logger.info("Item ID is: [#{item_id}")
           else
             tries -= 1
-            $logger.warn("[ReportPortal] Item not yet created, waiting 15 seconds and trying again, #{tries} attempts remaining.")
-            sleep(15)
+            $logger.warn("[ReportPortal] Item not yet created, Waiting 30 seconds and trying again, #{tries} attempts remaining.")
+            sleep(30)
           end
         end
         item_id
@@ -260,8 +257,8 @@ module ReportPortal
         $logger.warn("[ReportPortal] Request to #{url} produced an exception: #{$!.class}: #{$!}")
         # $!.backtrace.each(&method(:p))
         unless (tries -= 1).zero?
-          $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [#{url}], #{tries} attempts remaining.")
-          sleep(10)
+          $logger.warn("[ReportPortal] Waiting 30 seconds and retrying request to [#{url}], #{tries} attempts remaining.")
+          sleep(30)
           retry
         end
         $logger.warn("[ReportPortal] Failed to execute request to #{url} after #{max_tries} attempts.")
@@ -282,7 +279,7 @@ module ReportPortal
         max_tries = 5
         begin
           data = JSON.parse(project_resource[url].get)
-          $logger.info("[ReportPortal] Request to #{url} successful after #{(max_tries-tries)+1} attempts.") if tries != 3
+          $logger.info("[ReportPortal] Request to #{url} successful after #{(max_tries-tries)+1} attempts.") if tries != max_tries
           if data.key?('links')
             link = data['links'].find { |i| i['rel'] == 'next' }
             url = link.nil? ? nil : link['href']
@@ -297,8 +294,8 @@ module ReportPortal
           $logger.warn("[ReportPortal] Request to #{url} produced an exception: #{$!.class}: #{$!}")
           # $!.backtrace.each(&method(:p))
           unless (tries -= 1).zero?
-            $logger.warn("[ReportPortal] Waiting 10 seconds and retrying request to [#{url}], #{tries} attempts remaining.")
-            sleep(10)
+            $logger.warn("[ReportPortal] Waiting 30 seconds and retrying request to [#{url}], #{tries} attempts remaining.")
+            sleep(30)
             retry
           end
           $logger.warn("[ReportPortal] Failed to execute request to #{url} after #{max_tries} attempts.")
